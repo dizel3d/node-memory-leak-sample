@@ -1,5 +1,4 @@
 const torrentStream = require('torrent-stream');
-const profiler = require('v8-profiler');
 const fs = require('fs');
 
 const opts = {
@@ -27,52 +26,34 @@ let count = 0;
 
 const runTorrent = callback => {
     global.gc();
-    console.log(`${count}: ${process.memoryUsage().rss / (1024 * 1024) | 0} MB`);
-    const engine = torrentStream(magnet, opts);
-    engine.on('ready', () => {
-        engine.remove(() => {
-            engine.destroy(() => {
-                callback(++count);
+    setTimeout(() => {
+        console.log(`${count}: ${process.memoryUsage().rss / (1024 * 1024) | 0} MB`);
+        const engine = torrentStream(magnet, opts);
+        engine.on('ready', () => {
+            engine.remove(() => {
+                engine.destroy(() => {
+                    callback(++count);
+                });
             });
         });
-    });
+    }, 1000);
 };
 
-const baseTest = process.argv[3] === '--no-snapshots' ? runTorrent : callback => {
-        if (count % 10 === 0) {
-            console.log('Taking snapshot...');
-            const snapshot = profiler.takeSnapshot();
-            snapshot.export((error, result) => {
-                fs.writeFileSync(`snapshot-${count}.heapsnapshot`, result);
-                snapshot.delete();
-                runTorrent(callback);
-            });
-        } else {
+const baseTest = process.argv[2] === '--no-snapshots' ? runTorrent : callback => {
+    const profiler = require('v8-profiler');
+
+    if (count % 10 === 0) {
+        console.log('Taking snapshot...');
+        const snapshot = profiler.takeSnapshot();
+        snapshot.export((error, result) => {
+            fs.writeFileSync(`snapshot-${count}.heapsnapshot`, result);
+            snapshot.delete();
             runTorrent(callback);
-        }
-    };
-
-const tests = {
-    'torrent': () => {
-        const action = () => baseTest(action);
-        action();
-    },
-    'torrent-express': () => {
-        const express = require('express');
-        const fetch = require('node-fetch');
-
-        const app = express();
-        app.get('/', (req, res) => {
-            baseTest(() => res.end());
         });
-        app.listen(3102, '127.0.0.1');
-
-        const get = () => {
-            fetch('http://127.0.0.1:3102').then(get);
-        };
-        get();
+    } else {
+        runTorrent(callback);
     }
 };
 
-const testName = process.argv[2];
-tests[testName]();
+const action = () => baseTest(action);
+action();
